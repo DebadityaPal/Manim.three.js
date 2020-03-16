@@ -327,6 +327,8 @@ export class Animation {
                     gapSize: 1e10,
                     linewidth: 5,
                 })));
+            this.scene.add(axis[0]);
+            this.scene.add(axis[1]);
             return axis;
         } else {
             let geometry_y = new BufferGeometry();
@@ -348,6 +350,7 @@ export class Animation {
         }
     };
     createGraph2D = (func, segCnt, zoom, animate = true) => {
+        var line;
         if (animate) {
             let geometry = new BufferGeometry();
             let eps = 14 / segCnt;
@@ -369,7 +372,7 @@ export class Animation {
                     lineDistances[i] = lineDistances[i - 1] + points_t[i - 1].distanceTo(points_t[i]);
             }
             // console.log(lineDistances[numPoints - 1]);
-            return new Line(geometry, new LineDashedMaterial(
+            line = new Line(geometry, new LineDashedMaterial(
                 {
                     color: 0x4444ff,
                     dashSize: 0,
@@ -381,10 +384,13 @@ export class Animation {
             let eps = 10 / segCnt;
             for (let x = -5; x <= 5; x += eps)
                 geometry.vertices.push(new Vector3(x, func(x * zoom), 0));
-            return new Line(geometry, new LineBasicMaterial({color: 0x4444ff}));
+            line = new Line(geometry, new LineBasicMaterial({color: 0x4444ff}));
         }
+        this.scene.add(line);
+        return(line);
     };
     createGraph2DParametric = (xfunc, yfunc, from, to, segCnt, zoom, animate = true) => {
+        var line;
         if (animate) {
             let geometry = new BufferGeometry();
             let eps = (to - from) / segCnt;
@@ -406,7 +412,7 @@ export class Animation {
                     lineDistances[i] = lineDistances[i - 1] + points_t[i - 1].distanceTo(points_t[i]);
             }
             // console.log(lineDistances[numPoints - 1]);
-            return new Line(geometry, new LineDashedMaterial(
+            line = new Line(geometry, new LineDashedMaterial(
                 {
                     color: 0x4444ff,
                     dashSize: 0,
@@ -418,8 +424,10 @@ export class Animation {
             let eps = (to - from) / segCnt;
             for (let t = from; t <= to; t += eps)
                 geometry.vertices.push(new Vector3(xfunc(t * zoom), yfunc(t * zoom), 0));
-            return new Line(geometry, new LineBasicMaterial({color: 0x4444ff}));
+            line = new Line(geometry, new LineBasicMaterial({color: 0x4444ff}));
         }
+        this.scene.add(line);
+        return line;
     };
     graphTransform = (fromfunc, tofunc, segCnt, zoom, fraction) => {
         let geometry = new BufferGeometry();
@@ -542,7 +550,7 @@ export class Animation {
                 }));
             this.scene.add(line);
             return line;
-    };
+    }
 
     createCube = (side, texturePath = './textures/wood.jpg', i = 0, j = 0, k = 0, angleX = 0, angleY = 0, angleZ = 0) => {
         // side = scale(side, canvasX);

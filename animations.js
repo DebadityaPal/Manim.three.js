@@ -53,6 +53,22 @@ export let unfill = mesh => ({
     reset: () => {},
     terminateCond: () => (mesh.opacity <= 0)
 });
+export let scale = (shape, zoom) => {
+    let ret = {
+        name: "scale",
+        fraction: 0,
+        animate: () => {
+            ret.fraction += 0.01;
+            shape.scale.x = 1 + (ret.fraction*zoom);
+            shape.scale.y = 1 + (ret.fraction*zoom);
+        },
+        reset: () => {
+            ret.fraction = 0;
+        },
+        terminateCond: () => (ret.fraction >= 1)
+    };
+    return ret;
+}
 export let graphTransform = (anim, pastInit, fromFunc, toFunc, segCnt, zoom) => {
     let ret = {
         name: "graph transform",
