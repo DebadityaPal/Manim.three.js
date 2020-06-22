@@ -655,7 +655,8 @@ export class Animation {
     addTrackable = obj => {
         if(this.trackables[obj.name])
             return 1;
-        this.trackables[obj.name] = {...obj, isPlaying: false};
+        obj.isPlaying = false;
+        this.trackables[obj.name] = obj;
         let len = 0;
         for(let _ in this.trackables)
             len++;
@@ -669,9 +670,12 @@ export class Animation {
 
     startTrackable = name => {
         let trackable = this.trackables[name];
+        trackable.value = trackable.defaultValue ? parseInt(trackable.defaultValue) : 0;
         switch(trackable.type) {
-            case "slider":
+			case "slider":
+                let spanSlider = document.createElement('span');
                 let slider = document.createElement('input');
+                slider.setAttribute('name', trackable.name);
                 slider.setAttribute('type', 'range');
                 slider.setAttribute('min', trackable.min);
                 slider.setAttribute('max', trackable.max);
@@ -680,14 +684,36 @@ export class Animation {
                 slider.style.position = 'relative';
                 slider.style.width = "100%";
 
-                slider.addEventListener("input", e => trackable.animate(parseFloat(e.target.value)));
+                let labelSlider = document.createElement('span');
+                // labelSlider.setAttribute('for', trackable.name);
+                labelSlider.textContent = trackable.label;
+                labelSlider.style.color = "#ffffff";
+                labelSlider.style.position = "relative";
+                labelSlider.style.whiteSpace = "nowrap";
+                labelSlider.style.marginRight = "10px";
+                labelSlider.style.marginTop = "auto";
+                labelSlider.style.lineHeight = "40px";
 
-                trackable.object = slider;
+                slider.addEventListener("input", e => {
+                	trackable.animate(parseFloat(e.target.value));
+                	trackable.value = parseFloat(e.target.value);
+				});
 
-                this.controller.appendChild(slider);
+                trackable.object = spanSlider;
+                spanSlider.appendChild(labelSlider);
+                spanSlider.appendChild(slider);
+                spanSlider.style.opacity = "0";
+                spanSlider.style.height = "0";
+                this.controller.appendChild(spanSlider);
+
+                setTimeout(() => {
+                	spanSlider.style.opacity = "1";
+                	spanSlider.style.height = "40px";
+				}, 1);
+
                 break;
             case "input":
-                let span = document.createElement('span');
+                let spanInput = document.createElement('span');
                 let input = document.createElement('input');
                 input.setAttribute('autocomplete', 'off');
                 input.setAttribute('value', trackable.defaultValue);
@@ -704,30 +730,47 @@ export class Animation {
                 input.style.width = "auto";
                 // input.style.fontFamily = "sans-serif";
 
-                let label = document.createElement('label');
-                label.setAttribute('for', trackable.name);
-                label.textContent = trackable.label;
-                label.style.color = "#ffffff";
-                label.style.position = "relative";
+                let labelInput = document.createElement('label');
+                labelInput.setAttribute('for', trackable.name);
+                labelInput.textContent = trackable.label;
+                labelInput.style.color = "#ffffff";
+                labelInput.style.position = "relative";
+                labelInput.style.whiteSpace = "nowrap";
+                labelInput.style.marginRight = "10px";
+                labelInput.style.marginTop = "0";
+                labelInput.style.lineHeight = "40px";
                 // label.style.fontFamily = "sans-serif";
 
                 input.addEventListener("input", e => trackable.animate(parseFloat(e.target.value)));
 
-                trackable.object = span;
+                trackable.object = spanInput;
 
-                span.appendChild(label);
-                span.appendChild(input);
-                this.controller.appendChild(span);
+                spanInput.appendChild(labelInput);
+                spanInput.appendChild(input);
+
+                spanInput.style.opacity = "0";
+                spanInput.style.height = "0";
+                this.controller.appendChild(spanInput);
+                setTimeout(() => {
+                	spanInput.style.opacity = "1";
+                	spanInput.style.height = "40px";
+				}, 1);
                 break;
         }
     };
 
     stopTrackable = name => {
-        this.trackables[name].object.style.display = "none";
+        this.trackables[name].object.style.opacity = "0";
+        this.trackables[name].object.style.height = "0";
     };
 
-    addHook = (condition, callback) => {
-        this.hooks.push({condition, callback});
+	//TODO: Support animated hooks
+    addHook = ({condition, init = null, onSatisfied, onDissatisfied = null, animate = false}) => {
+    	this.addAnimation({name: "checkpoint"});
+        this.animations.push({name: "hook", index: this.hooks.length});
+        if(init)
+        	init();
+        this.hooks.push({condition, onSatisfied, onDissatisfied, animate, now: false});
     };
 
     update = () => {
@@ -735,9 +778,37 @@ export class Animation {
             this.sprites[i].lookAt(this.camera.position);
             this.sprites[i].setRotationFromQuaternion(this.camera.quaternion, 0);
         }
-
-        if(!this.isPlaying)
+        if(this.curIndex === parseInt(this.countCheckpoints())) {
+            if(this.isPlaying)
+                for(let i in this.trackables)
+                    this.stopTrackable(i);
+            this.pause();
             return;
+        }
+
+        this.timeContainer.innerText = this.sanitizeTime(this.curIndex) + " / " + this.sanitizeTime(this.countCheckpoints() - 1);
+
+        if(!this.isPlaying || this.start >= this.animations.length)
+            return;
+
+
+        if(this.animations[this.start].name === "hook") {
+        	let hook = this.hooks[this.animations[this.start].index];
+        	if(hook.condition() && !hook.now) {
+        		hook.now = true;
+        		hook.onSatisfied();
+        		if(hook.onDissatisfied === null) {
+        			this.start++;
+        			return;
+				}
+			}
+        	if(!hook.condition() && hook.now && hook.onDissatisfied) {
+        		hook.now = false;
+        		hook.onDissatisfied();
+			}
+
+        	return;
+		}
 
         let played = false;
         let fraction = 1;
@@ -807,8 +878,8 @@ export class Animation {
     };
     countCheckpoints = () => {
         let ret = 0;
-        for(let i = 1;i<this.animations.length; i++) {
-            if(this.animations[i].name === "checkpoint" && this.animations[i-1].name !== "checkpoint")
+        for(let i = 1;i < this.animations.length; i++) {
+            if(this.animations[i].name === "checkpoint" && this.animations[i-1].name !== "checkpoint")// && this.animations[i+1].name !== "hook")
                 ret++;
         }
         return ret.toString();
@@ -819,13 +890,14 @@ export class Animation {
             this.start = 0;
             let frac = true;
             for(let i = 0;i < this.animations.length; i++) {
-                if(this.animations[i].name === "checkpoint" && i !== 0 && this.animations[i-1].name !== "checkpoint") {
+                if(this.animations[i].name === "checkpoint" && i !== 0 && this.animations[i-1].name !== "checkpoint" && this.animations[i-1].name !== "hook") {
                     frac = false;
                 }
                 else if(this.animations[i].name === "checkpoint" ||
                     this.animations[i].name === "delay" ||
                     this.animations[i].name === "addTrackable" ||
-                    this.animations[i].name === "removeTrackable"
+                    this.animations[i].name === "removeTrackable" ||
+					this.animations[i].name === "hook"
                 ) {}
                 else if(frac) {
                     this.animations[i].set(value);
@@ -837,8 +909,23 @@ export class Animation {
                 }
             }
             for(let i = this.animations.length - 1; i >= 0; i--)
-                if(this.animations[i].name !== "checkpoint" && this.animations[i].name !== "delay")
+                if(this.animations[i].name !== "checkpoint"
+					&& this.animations[i].name !== "delay"
+					&& this.animations[i].name !== "addTrackable"
+					&& this.animations[i].name !== "removeTrackable"
+					&& this.animations[i].name !== "hook"
+				)
                     this.animations[i].set(this.animations[i].fraction);
+                else if(this.animations[i].name === "addTrackable") {
+                    this.animations[i].isPlaying = false;
+                    this.stopTrackable(this.animations[i].index);
+                }
+                else if(this.animations[i].name === "removeTrackable") {
+                    this.animations[i].isPlaying = false;
+                    this.startTrackable(this.animations[i].index);
+                }
+                else if(this.animations[i].name === "hook")
+                    this.hooks[this.animations[i].index].now = false;
             if(this.isPlaying)
                 this.play();
             else {this.update();this.render();this.pause();}
@@ -855,7 +942,8 @@ export class Animation {
             else if(this.animations[i].name === "checkpoint" ||
                 this.animations[i].name === "delay" ||
                 this.animations[i].name === "addTrackable" ||
-                this.animations[i].name === "removeTrackable"
+                this.animations[i].name === "removeTrackable" ||
+				this.animations[i].name === "hook"
             ){}
             else if(cur <= value && value < cur + 1) {
                 this.animations[i].set(value - cur);
@@ -874,9 +962,20 @@ export class Animation {
             if(this.animations[i].name !== "checkpoint" &&
                 this.animations[i].name !== "delay" &&
                 this.animations[i].name !== "addTrackable" &&
-                this.animations[i].name !== "removeTrackable"
+                this.animations[i].name !== "removeTrackable" &&
+				this.animations[i].name !== "hook"
             )
                 this.animations[i].set(this.animations[i].fraction);
+            else if(this.animations[i].name === "addTrackable") {
+                this.animations[i].isPlaying = false;
+                this.stopTrackable(this.animations[i].index);
+            }
+            else if(this.animations[i].name === "removeTrackable") {
+                this.animations[i].isPlaying = false;
+                this.startTrackable(this.animations[i].index);
+            }
+            else if(this.animations[i].name === "hook")
+                this.hooks[this.animations[i].index].now = false;
         if(this.isPlaying)
             this.play();
         else {this.update();this.render();this.pause();}
@@ -886,12 +985,29 @@ export class Animation {
             return;
 
         this.isPlaying = false;
+        this.playButton.setAttribute('class', "fas fa-play");
     };
-    play = (initial=true) => {
+    sanitizeTime = value => {
+        let minutes = Math.floor(value / 60);
+        let seconds = value % 60;
+        let smin = minutes > 9 ? minutes.toString(10) : "0" + minutes.toString(10);
+        let ssec = seconds > 9 ? seconds.toString(10) : "0" + seconds.toString(10);
+        return smin + ":" + ssec;
+    };
+    play = (initial = true) => {
+        console.log(this.animations);
+        console.log(this.countCheckpoints());
         if (this.isPlaying)
             return;
         if(initial) {
+
+            let fa = document.createElement('script');
+            fa.setAttribute('src', "https://kit.fontawesome.com/0dd3616480.js");
+            fa.setAttribute('crossorigin', "anonymous");
+            document.getElementsByTagName('head')[0].appendChild(fa);
+
             this.seekbarContainer = document.createElement('div');
+            this.animations.push({name: "checkpoint"});
             let css = `
 .animation-bottom {
     width: calc(100% - 20px);
@@ -1015,8 +1131,16 @@ export class Animation {
     width: 20%;
     margin-left: 20px;
 }
+.scene-controller span {
+    -webkit-transition: all 0.5s ease-in-out;
+    -moz-transition: all 0.5s ease-in-out;
+    -ms-transition: all 0.5s ease-in-out;
+    -o-transition: all 0.5s ease-in-out;
+    transition: all 0.5s ease-in-out;
+}
 .scene-controller input[type=range], .scene-controller span {
-    margin-top: 20px;
+    margin: auto 0;
+    display: flex;
 }
 .scene-controller input[type=range] {
     -webkit-appearance: none; /* Hides the slider so that custom slider can be made */
@@ -1139,6 +1263,71 @@ export class Animation {
             this.container.appendChild(this.seekbarContainer);
             this.seekbar.addEventListener("input", e => {this.seek(parseFloat(e.target.value)); this.seekbar.setAttribute('value', e.target.value); this.seekbar.value = e.target.value});
 
+            this.playButton = document.createElement('i');
+            this.playButton.setAttribute('class', 'fas fa-play');
+            this.playButton.style.position = "relative";
+            this.playButton.style.color = "white";
+            this.playButton.style.margin = "0 10px";
+            this.playButton.style.cursor = "pointer";
+            this.playButton.addEventListener("click", () => {
+                console.log(this.isPlaying);
+                if(this.isPlaying)
+                    this.pause();
+                else this.play(false);
+            });
+            this.seekbarContainer.appendChild(this.playButton);
+
+            this.timeContainer = document.createElement('span');
+            this.timeContainer.innerText = "00:00 / " + this.sanitizeTime(this.countCheckpoints() - 1);
+            this.timeContainer.style.position = "relative";
+            this.timeContainer.style.color = "white";
+            this.timeContainer.style.lineHeight = "25px";
+            this.timeContainer.style.height = "30px";
+            this.timeContainer.style.display = "inline-block";
+            this.timeContainer.style.margin = "0 10px";
+            this.seekbarContainer.appendChild(this.timeContainer);
+
+            let fullscreen = document.createElement('i');
+            fullscreen.setAttribute('class', "fas fa-expand");
+            fullscreen.style.position = "relative";
+            fullscreen.style.color = "white";
+            fullscreen.style.margin = "0 10px";
+            fullscreen.style.cursor = "pointer";
+            fullscreen.style.cssFloat = "right";
+            fullscreen.style.height = "25px";
+            fullscreen.style.lineHeight = "25px";
+            this.fullscreen = false;
+            fullscreen.addEventListener("click", () => {
+                if(this.fullscreen) {
+                    if (document.exitFullscreen)
+                        document.exitFullscreen();
+                    else if (document.webkitExitFullscreen)
+                        document.webkitExitFullscreen();
+                    else if (document.mozCancelFullScreen)
+                        document.mozCancelFullScreen();
+                    else if (document.msExitFullscreen)
+                        document.msExitFullscreen();
+                    else
+                        alert("Exit fullscreen doesn't work");
+                    this.fullscreen = false;
+                    fullscreen.setAttribute('class', "fas fa-expand");
+                } else {
+                    if (this.container.RequestFullScreen)
+                        this.container.RequestFullScreen();
+                    else if (this.container.webkitRequestFullScreen)
+                        this.container.webkitRequestFullScreen();
+                    else if (this.container.mozRequestFullScreen)
+                        this.container.mozRequestFullScreen();
+                    else if (this.container.msRequestFullscreen)
+                        this.container.msRequestFullscreen();
+                    else
+                        alert("This browser doesn't supporter fullscreen");
+                    this.fullscreen = true;
+                    fullscreen.setAttribute('class', "fas fa-compress");
+                }
+            });
+            this.seekbarContainer.appendChild(fullscreen);
+
             this.controller = document.createElement('div');
             this.controller.setAttribute('class', 'scene-controller');
             this.container.appendChild(this.controller);
@@ -1148,7 +1337,10 @@ export class Animation {
                 this.render();
             });
         }
-        this.isPlaying = true;
+        else {
+            this.playButton.setAttribute('class', "fas fa-pause");
+            this.isPlaying = true;
+        }
     };
     stop = () => {
         this.renderer.setAnimationLoop(null);
